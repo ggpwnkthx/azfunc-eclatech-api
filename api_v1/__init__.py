@@ -1,34 +1,43 @@
+import azure.durable_functions as df
 import azure.functions as func
 import logging
-from flask import Flask
-from libs.flask.db import __init__ as init_db
-from libs.flask.jsonapi import __init__ as init_jsonapi
-from libs.flask.jsonapi.blueprints import register_blueprints as register_blueprints_jsonapi
-from urllib.parse import urlparse
+from libs.flask import app,permission,db,jsonapi
 
-# This only runs if the flask instance does not have any blueprints
-# Which means, this should ONLY run once
-async def main(req: func.HttpRequest, context: func.Context) -> func.HttpResponse:
-    app = Flask(__name__)
-    prefix = urlparse(req.url).path.removesuffix('/'+str(req.route_params.get('flask_route')))
-    app.db = init_db(app)
-    
-    init_jsonapi(app)
-    register_blueprints_jsonapi(app, f'{prefix}/jsonapi')
-    
-    # @app.errorhandler(403)
-    # def internal_error(error):
-    #     error = {
-    #         'status': '403',
-    #         'title': 'Permission Error',
-    #         'detail': 'Requesting entity does not have permission to perform the requested action.'
-    #     }
-    #     identity = whoami()
-    #     if 'error' in identity.keys():
-    #         error['reason'] = {
-    #             'detail': identity['error']['message']
-    #         }
-    #     return {'errors':[error]}, 403
-    
-    logging.warning(app.url_map)
+from libs.flask.jsonapi.blueprints import (
+    register_blueprints as register_blueprints_jsonapi,
+)
+from pprint import pformat
+from urllib.parse import urlparse
+from flask import request
+
+
+async def main(
+    req: func.HttpRequest, context: func.Context, starter: str
+) -> func.HttpResponse:
+    if len(app.url_map._rules) <= 1:
+        prefix = urlparse(req.url).path.removesuffix(
+            "/" + str(req.route_params.get("flask_route"))
+        )
+        register_blueprints_jsonapi(app, db, jsonapi, permission, f"{prefix}/jsonapi")
+
+        @app.route(f"{prefix}/test")
+        @permission.gatekeeper(
+            resource={"name": f"schema.{req.headers.get('Host')}"},
+            action={"method": "GET"},
+        )
+        def add():
+            return "test"
+
+        for rule in app.url_map._rules:
+            logging.warning(f'{",".join(rule.methods)}: {rule}')
+
+    # Inject durable function starter string into the request header
+    req = func.HttpRequest(
+        method=req.method,
+        url=req.url,
+        headers={**req.headers, "durable-starter": starter},
+        params=req.params,
+        route_params=req.route_params,
+        body=req.get_body(),
+    )
     return func.WsgiMiddleware(app.wsgi_app).handle(req, context)

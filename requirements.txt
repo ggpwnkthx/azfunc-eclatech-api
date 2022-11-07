@@ -14,12 +14,11 @@ azure-storage-queue
 
 # Database
 pyodbc
-salesforce-bulk==2.2.0
 sqlalchemy
+shillelagh
 
 # Data Manipulation
 geojson
-pandas
 pyarrow
 
 # Flask
@@ -31,14 +30,15 @@ Flask-Restless-NG
 
 # Identity/Authenticity/Authorization
 py-abac
-py-abac[sql]
 pyjwt
 requests-auth-aws-sigv4
 Authlib
 
-# Other
+# Maths
 area
 numpy
-pyproj
 shapely
+
+# Other
+pyproj
 requests

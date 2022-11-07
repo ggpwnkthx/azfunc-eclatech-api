@@ -1,92 +1,94 @@
-from py_abac.storage.sql import SQLStorage
+# from py_abac.storage.sql import SQLStorage
+from .azure.table.storage import AzureTableStorage
 from py_abac import PDP, Policy, AccessRequest
-from .. import app
-from ..identity import whoami
+from flask import Flask
+from ..authenticity import whoami
 from functools import wraps
 from flask import abort
 import os
 
-from sqlalchemy.orm import sessionmaker, scoped_session
-def get_storage(app, bind=None):
-    return SQLStorage(
-        scoped_session=scoped_session(
-            sessionmaker(
-                bind=app.db.engines[bind]
-            )
+class Authorization:
+    def __init__(self, app:Flask):
+        self.app = app
+        self.storage = AzureTableStorage(
+            table_name=str(os.environ.get('flask_abac_table') if os.environ.get('flask_abac_table') else 'pyabac'),
+            conn_str=os.environ['AzureWebJobsStorage']
         )
-    )
-
-class DynObj:
-    None
+        
+        @app.errorhandler(403)
+        def auth_error(error):
+            error = {
+                'status': '403',
+                'title': 'Permission Error',
+                'detail': 'Requesting entity does not have permission to perform the requested action.'
+            }
+            identity = whoami()
+            if 'error' in identity.keys():
+                error['reason'] = {
+                    'detail': identity['error']['message']
+                }
+            return {'errors':[error]}, 403
+        
+    def is_allowed(self, resource, action, context={}):
+        return PDP(self.storage).is_allowed(
+            AccessRequest.from_json({
+                "subject": {
+                    "id": "",
+                    "attributes": whoami()
+                },
+                "resource": {
+                    "id": "",
+                    "attributes": resource
+                },
+                "action": {
+                    "id": "",
+                    "attributes": action
+                },
+                "context": context
+            })
+        )
+        
+    def check(self, resource, action, context={}):
+        if not self.is_allowed(resource, action, context):
+            abort(403)
     
-app.permission = DynObj()
-def is_allowed(resource, action, context={}):
-    return PDP(get_storage(app, bind=os.environ.get("abac_sql_bind"))).is_allowed(
-        AccessRequest.from_json({
-            "subject": {
-                "id": "",
-                "attributes": whoami()
-            },
-            "resource": {
-                "id": "",
-                "attributes": resource
-            },
-            "action": {
-                "id": "",
-                "attributes": action
-            },
-            "context": context
+    def can(self, resource, action, context={}):
+        def wrapper(function):
+            @wraps(function)
+            def inner(*args, **kwargs):
+                self.check(resource, action, context)
+                return function(*args, **kwargs, )
+            return inner
+        return wrapper
+    
+    gatekeeper = can
+    
+    def add_policy(self, name:str, rules: dict, description:str = "", effect:str = "allow", targets:dict = {}, priority:int = 0):
+        policy = Policy.from_json({
+            "uid": name,
+            "description": description,
+            "effect": effect,
+            "rules": rules,
+            "targets": targets,
+            "priority": priority
         })
-    )
-def check(resource, action, context={}):
-    if not is_allowed(resource, action, context):
-        abort(403)
-app.permission.check = check
-    
-# Wrapper function to simplify permission checks
-def can(resource, action, context={}):
-    def wrapper(function):
-        @wraps(function)
-        def inner(*args, **kwargs):
-            check(resource, action, context)
-            return function(*args, **kwargs)
-        return inner
-    return wrapper
-app.permission.gatekeeper = can
+        self.storage.add(policy)
 
-def add_policy(name:str, rules: dict, description:str = "", effect:str = "allow", targets:dict = {}, priority:int = 0):
-    storage = get_storage(app, bind=os.environ.get("abac_sql_bind"))
-    policy = Policy.from_json({
-        "uid": name,
-        "description": description,
-        "effect": effect,
-        "rules": rules,
-        "targets": targets,
-        "priority": priority
-    })
-    storage.add(policy)
-
-def delete_policy(name:str):
-    storage = get_storage(app, bind=os.environ.get("abac_sql_bind"))
-    storage.delete(name)
-    storage.session.commit()
+    def delete_policy(self, name:str):
+        self.storage.delete(name)
     
-
-    
-# from ..flask.authorization import (
-#     add_policy as abac_add_policy,
-#     delete_policy as abac_delete_policy
-# )
-# add_policy(
-#     name="AllowAllForDevOps",
-#     rules={
-#         "subject": [
-#             {"$.groups": {"condition": "AnyIn", "values": ["1d20defe-43a7-4831-93e0-68ada1afc646"]}},
-#         ],
-#         "resource": {"$.name": {"condition": "RegexMatch", "value": ".*"}},
-#         "action": [
-#             {"$.method": {"condition": "RegexMatch", "value": ".*"}},
-#         ],
-#         "context": {}
-#     }
-# )
+def __init__(app:Flask) -> Authorization:
+    # app.permission.add_policy(
+    #     name="AllowAllForEclatech",
+    #     rules={
+    #         "subject": [
+    #             {"$.groups": {"condition": "AnyIn", "values": ["031b4b97-8db8-48c3-a5f7-10fd7e48fc6b"]}},
+    #         ],
+    #         "resource": {"$.name": {"condition": "RegexMatch", "value": ".*"}},
+    #         "action": [
+    #             {"$.method": {"condition": "RegexMatch", "value": ".*"}},
+    #         ],
+    #         "context": {}
+    #     }
+    # )
+    return Authorization(app)

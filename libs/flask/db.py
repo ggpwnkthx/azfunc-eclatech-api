@@ -7,12 +7,13 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from libs.azure.sql import GenerateAzSQLConnectionString
 
-def __init__(app:Flask) -> SQLAlchemy:
-    db = SQLAlchemy(app)
+class FlaskDatabase(SQLAlchemy):
+    autoloaded_models = []
 
+def __init__(app:Flask) -> FlaskDatabase:
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    if os.environ.get('flask_sql_instance') and os.environ.get('flask_sql_database')
-    app.config['SQLALCHEMY_DATABASE_URI'] = GenerateAzSQLConnectionString(os.environ.get('flask_sql_instance'), os.environ.get('flask_sql_database'))
+    if os.environ.get('flask_sql_instance') and os.environ.get('flask_sql_database'):
+        app.config['SQLALCHEMY_DATABASE_URI'] = GenerateAzSQLConnectionString(os.environ.get('flask_sql_instance'), os.environ.get('flask_sql_database'))
     app.config['SQLALCHEMY_BINDS'] = {
         f'{server}:{database}':GenerateAzSQLConnectionString(server, database)
         for server, database in [
@@ -25,9 +26,10 @@ def __init__(app:Flask) -> SQLAlchemy:
         ]
         if f'{server}:{database}' != f"{os.environ.get('flask_sql_instance')}:{os.environ.get('flask_sql_database')}"
     }
+    
+    db = FlaskDatabase(app)
 
     # Get all the defined SQLAlchemy models
-    db.autoloaded_models = []
     cwd = pathlib.Path(os.getcwd())
     walk_path = pathlib.Path(f"{__file__}/../../sql/models")
     for root, dirs, files in os.walk(walk_path.resolve(), topdown=False):
@@ -41,6 +43,5 @@ def __init__(app:Flask) -> SQLAlchemy:
                     module = importlib.import_module(module_name)
                     for class_name, class_object in inspect.getmembers(sys.modules[module_name], lambda x: inspect.isclass(x) and (x.__module__ == module_name)):
                         db.autoloaded_models.append(class_object)
-                        class_object.create_all(checkfirst=True)
     
     return db
