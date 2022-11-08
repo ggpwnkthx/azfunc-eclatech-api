@@ -25,7 +25,6 @@ pyarrow
 Flask
 Flask-SQLAlchemy
 Flask-Session
-Flask-SQLAlchemy-Session
 Flask-Restless-NG
 
 # Identity/Authenticity/Authorization

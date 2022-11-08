@@ -1,13 +1,35 @@
-from sqlalchemy.inspection import inspect
+from sqlalchemy.inspection import inspect as sqlalchemy_inspect
+from flask_restless import APIManager
+from .. import app, permission, db
+from flask import request
 
-def register_blueprints(app, db, jsonapi, permission, prefix):
+def check_auth(*args, **kwargs):
+    permission.check(
+        resource={"name":f"{request.path.split('/')[3]}.{request.host}"},
+        action={"method":request.method}
+    )
+
+def register_blueprints(prefix):
+    jsonapi_defaults = {
+        "url_prefix": prefix, 
+        "preprocessors": {
+            "GET_COLLECTION": [check_auth],
+            "GET_RESOURCE": [check_auth],
+            "GET_RELATION": [check_auth],
+            "GET_RELATED_RESOURCE": [check_auth],
+            "DELETE_RESOURCE": [check_auth],
+            "POST_RESOURCE": [check_auth],
+            "PATCH_RESOURCE": [check_auth],
+            "GET_RELATIONSHIP": [check_auth],
+            "DELETE_RELATIONSHIP": [check_auth],
+            "POST_RELATIONSHIP": [check_auth],
+            "PATCH_RELATIONSHIP": [check_auth]
+        },
+        "page_size": 100,
+        "max_page_size": 2000,
+    }
     with app.app_context():
-        jsonapi_defaults = {
-            "url_prefix": prefix, 
-            "preprocessors": jsonapi.api_preprocessors,
-            "page_size": 100,
-            "max_page_size": 2000,
-        }
+        jsonapi = APIManager(app, db.session)
         for model in db.autoloaded_models:
             jsonapi.create_api(
                 model,
@@ -15,10 +37,9 @@ def register_blueprints(app, db, jsonapi, permission, prefix):
                 **jsonapi_defaults,
                 **model.JSONAPI
             )
-        
         @app.route(f"{prefix}/schema")
         @permission.gatekeeper(
-            resource={"name":f"schema.esquireadvertising.com"},
+            resource={"name":f"schema"},
             action={"method":"GET"}
         )
         def get_schema():
@@ -34,7 +55,7 @@ def register_blueprints(app, db, jsonapi, permission, prefix):
                                 if (hasattr(column,"__read_only__") and column.__read_only__)
                                 else False
                         }
-                        for column in inspect(model).columns
+                        for column in sqlalchemy_inspect(model).columns
                         if "_id" not in column.key
                     },
                     "relationships": {
@@ -43,7 +64,7 @@ def register_blueprints(app, db, jsonapi, permission, prefix):
                                 if hasattr(rel[1].mapper.class_,"__collection_name__") 
                                 else rel[1].mapper.class_.__name__
                         }
-                        for rel in inspect(model).relationships.items()
+                        for rel in sqlalchemy_inspect(model).relationships.items()
                     }
                 }
                 for model in db.autoloaded_models

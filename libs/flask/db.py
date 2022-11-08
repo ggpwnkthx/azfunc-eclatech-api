@@ -1,47 +1,65 @@
-import sys
-import os
-import pathlib
-import inspect
-import importlib
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from libs.azure.sql import GenerateAzSQLConnectionString
+"""
+Flask-SQLAlchemy-Session
+-----------------------
+Provides an SQLAlchemy scoped session that creates
+unique sessions per Flask request
+"""
+# pylint: disable=invalid-name
+from werkzeug.local import LocalProxy
+from flask import current_app
+from sqlalchemy.orm import scoped_session
 
-class FlaskDatabase(SQLAlchemy):
-    autoloaded_models = []
+try:
+    from greenlet import getcurrent as _get_ident  # type: ignore
+except ImportError:
+    from threading import get_ident as _get_ident
 
-def __init__(app:Flask) -> FlaskDatabase:
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    if os.environ.get('flask_sql_instance') and os.environ.get('flask_sql_database'):
-        app.config['SQLALCHEMY_DATABASE_URI'] = GenerateAzSQLConnectionString(os.environ.get('flask_sql_instance'), os.environ.get('flask_sql_database'))
-    app.config['SQLALCHEMY_BINDS'] = {
-        f'{server}:{database}':GenerateAzSQLConnectionString(server, database)
-        for server, database in [
-            (key, os.environ[f'sql_database_{key}'])
-            for key in [
-                key.replace('SQL_INSTANCE_', '').lower()
-                for key in os.environ.keys()
-                if key.startswith('SQL_INSTANCE')
-            ]
-        ]
-        if f'{server}:{database}' != f"{os.environ.get('flask_sql_instance')}:{os.environ.get('flask_sql_database')}"
-    }
-    
-    db = FlaskDatabase(app)
+__all__ = ["current_session", "flask_scoped_session"]
+__version__ = 1.1
 
-    # Get all the defined SQLAlchemy models
-    cwd = pathlib.Path(os.getcwd())
-    walk_path = pathlib.Path(f"{__file__}/../../sql/models")
-    for root, dirs, files in os.walk(walk_path.resolve(), topdown=False):
-        for file in files:
-            path_parts = file.split('.')
-            if path_parts[-1] == "py":
-                if path_parts[0] != "base" and path_parts[0] != "__base__":
-                    absolute_path = pathlib.Path(f"{root}/{file}").resolve()
-                    relative_path = str(absolute_path).replace(str(cwd.resolve()),"")[1:]
-                    module_name = ".".join(pathlib.Path(os.path.splitext(relative_path)[0]).parts)
-                    module = importlib.import_module(module_name)
-                    for class_name, class_object in inspect.getmembers(sys.modules[module_name], lambda x: inspect.isclass(x) and (x.__module__ == module_name)):
-                        db.autoloaded_models.append(class_object)
-    
-    return db
+class flask_scoped_session(scoped_session):
+    """A :class:`~sqlalchemy.orm.scoping.scoped_session` whose scope is set to
+    the Flask application context.
+    """
+    def __init__(self, session_factory, app=None):
+        """
+        :param session_factory: A callable that returns a
+            :class:`~sqlalchemy.orm.session.Session`
+        :param app: a :class:`~flask.Flask` application
+        """
+        super(flask_scoped_session, self).__init__(
+            session_factory,
+            scopefunc=_get_ident)
+        if app is not None:
+            self.init_app(app)
+
+    def init_app(self, app):
+        """Setup scoped session creation and teardown for the passed ``app``.
+        :param app: a :class:`~flask.Flask` application
+        """
+        app.scoped_session = self
+
+        @app.teardown_appcontext
+        def remove_scoped_session(*args, **kwargs):
+            # pylint: disable=missing-docstring,unused-argument,unused-variable
+            app.scoped_session.remove()
+
+def _get_session() -> flask_scoped_session:
+    # pylint: disable=missing-docstring, protected-access
+    context = current_app.app_context()
+    if context is None:
+        raise RuntimeError(
+            "Cannot access current_session when outside of an application "
+            "context.")
+    if not hasattr(current_app, "scoped_session"):
+        raise AttributeError(
+            "{0} has no 'scoped_session' attribute. You need to initialize it "
+            "with a flask_scoped_session.".format(current_app))
+    return current_app.scoped_session
+
+
+current_session = LocalProxy(_get_session)
+"""Provides the current SQL Alchemy session within a request.
+Will raise an exception if no :data:`~flask.current_app` is available or it has
+not been initialized with a :class:`flask_scoped_session`
+"""
