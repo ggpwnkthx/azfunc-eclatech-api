@@ -24,8 +24,8 @@ pyarrow
 # Flask
 Flask
 Flask-SQLAlchemy
-Flask-Session
 Flask-Restless-NG
+Flask-Session
 
 # Identity/Authenticity/Authorization
 py-abac

@@ -76,19 +76,3 @@ class Authorization:
 
     def delete_policy(self, name:str):
         self.storage.delete(name)
-    
-def __init__(app:Flask) -> Authorization:
-    # app.permission.add_policy(
-    #     name="AllowAllForEclatech",
-    #     rules={
-    #         "subject": [
-    #             {"$.groups": {"condition": "AnyIn", "values": ["031b4b97-8db8-48c3-a5f7-10fd7e48fc6b"]}},
-    #         ],
-    #         "resource": {"$.name": {"condition": "RegexMatch", "value": ".*"}},
-    #         "action": [
-    #             {"$.method": {"condition": "RegexMatch", "value": ".*"}},
-    #         ],
-    #         "context": {}
-    #     }
-    # )
-    return Authorization(app)
