@@ -2,9 +2,12 @@ from flask import Flask
 
 app = Flask(__name__)
 
-from libs.flask.authorization import __init__ as init_authorization
-permission = init_authorization(app)
+from libs.flask.authorization import Authorization
+permission = Authorization(app)
 
+
+from libs.flask.sessions import __init__ as init_sessions
+init_sessions(app)
 
 
 import sys
@@ -51,6 +54,3 @@ for root, dirs, files in os.walk(walk_path.resolve(), topdown=False):
                 module = importlib.import_module(module_name)
                 for class_name, class_object in inspect.getmembers(sys.modules[module_name], lambda x: inspect.isclass(x) and (x.__module__ == module_name)):
                     db.autoloaded_models.append(class_object)
-
-# from libs.flask.sessions import __init__ as init_sessions
-# init_sessions(app)

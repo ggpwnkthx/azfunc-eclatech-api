@@ -18,8 +18,8 @@ from flask import Flask
 def __init__(app:Flask) -> Session:
     app.config["SECRET_KEY"] = os.environ["flask_secret_key"]
     app.config["SESSION_PERMANENT"] = True
-    app.config["SESSION_COOKIE_SECURE"] = True
-    app.config["REMEMBER_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_SECURE"] = False if os.environ.get("dev") else True
+    app.config["REMEMBER_COOKIE_SECURE"] = False if os.environ.get("dev") else True
     app.config["SESSION_TYPE"] = "azurestoragetable"
     app.config["SESSION_AZURE_STORAGE_TABLE_NAME"] = os.environ.get('flask_session_table') if os.environ.get('flask_session_table') else 'flask_sessions'
 
